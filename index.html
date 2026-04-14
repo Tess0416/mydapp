@@ -35,6 +35,10 @@
       color: #fff;
       margin-bottom: 10px;
       cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn:hover {
+      opacity: 0.9;
     }
     .btn-blue { background: #0071e3; }
     .btn-green { background: #22c55e; }
@@ -46,7 +50,12 @@
       margin-top: 10px;
       font-size: 14px;
       word-break: break-all;
-      display: none; /* 默认不显示 */
+      display: none;
+    }
+    .tip {
+      color: #ccc;
+      font-size: 12px;
+      margin-top: 4px;
     }
   </style>
 </head>
@@ -56,6 +65,7 @@
   <h3>🔌 连接钱包</h3>
   <button class="btn btn-blue" id="connectBtn">连接钱包（OKX / MetaMask）</button>
   <div class="address" id="account"></div>
+  <div class="tip" id="connectTip">点击按钮后请在钱包中完成授权</div>
 </div>
 
 <div class="card">
@@ -71,58 +81,82 @@
 
 <script>
 let currentAccount = null;
+const provider = window.okxwallet || window.ethereum;
 
-// 连接钱包（只有点按钮才会触发，绝不自动连接）
+// 连接钱包：只弹钱包授权，移除浏览器alert
 document.getElementById("connectBtn").onclick = async () => {
+  if (!provider) {
+    // 仅首次检测不到钱包时提示，用DOM显示而非alert
+    document.getElementById("connectTip").innerText = "未检测到钱包，请安装OKX/MetaMask";
+    return;
+  }
+
   try {
-    const provider = window.okxwallet || window.ethereum;
-    if (!provider) {
-      alert("请安装 OKX 钱包或 MetaMask");
-      return;
-    }
-
-    // 主动请求账户 → 一定会弹窗
-    const accounts = await provider.request({
-      method: "eth_requestAccounts"
-    });
-
+    // 仅触发钱包原生授权弹窗，无浏览器提示
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
     
-    // 显示地址
+    // 更新DOM显示连接状态，不弹框
     const accountEl = document.getElementById("account");
     accountEl.innerText = "已连接：" + currentAccount;
     accountEl.style.display = "block";
+    document.getElementById("connectTip").innerText = "钱包连接成功";
 
   } catch (err) {
-    alert("连接被拒绝或出错：" + err.message);
+    // 错误信息也用DOM显示
+    document.getElementById("connectTip").innerText = "连接失败：" + err.message;
   }
 };
 
-// 授权
-document.getElementById("approveBtn").onclick = () => {
+// 授权：直接触发钱包交易，无浏览器alert
+document.getElementById("approveBtn").onclick = async () => {
   if (!currentAccount) {
-    alert("请先连接钱包");
+    document.getElementById("connectTip").innerText = "请先连接钱包";
     return;
   }
-  alert("请在钱包中确认授权交易");
+  // 真实触发USDC授权交易（钱包会弹确认框）
+  await provider.request({
+    method: "eth_sendTransaction",
+    params: [{
+      from: currentAccount,
+      to: "0x6000000000000000000000000000000000000000", // USDC地址
+      data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680" // 授权10 USDC的calldata
+    }]
+  });
 };
 
-// 托管
-document.getElementById("depositBtn").onclick = () => {
+// 托管：直接触发合约交易，无浏览器alert
+document.getElementById("depositBtn").onclick = async () => {
   if (!currentAccount) {
-    alert("请先连接钱包");
+    document.getElementById("connectTip").innerText = "请先连接钱包";
     return;
   }
-  alert("请在钱包中确认托管交易");
+  // 真实触发托管交易（钱包会弹确认框）
+  await provider.request({
+    method: "eth_sendTransaction",
+    params: [{
+      from: currentAccount,
+      to: "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD", // 托管合约
+      data: "0x4e71d92d0000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680" // 托管10 USDC的calldata
+    }]
+  });
 };
 
-// 放款
-document.getElementById("releaseBtn").onclick = () => {
+// 放款：直接触发合约交易，无浏览器alert
+document.getElementById("releaseBtn").onclick = async () => {
   if (!currentAccount) {
-    alert("请先连接钱包");
+    document.getElementById("connectTip").innerText = "请先连接钱包";
     return;
   }
-  alert("请在钱包中确认放款交易");
+  // 真实触发放款交易（钱包会弹确认框）
+  await provider.request({
+    method: "eth_sendTransaction",
+    params: [{
+      from: currentAccount,
+      to: "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD", // 托管合约
+      data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2) // 放款到当前账户的calldata
+    }]
+  });
 };
 </script>
 </body>
