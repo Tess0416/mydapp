@@ -62,8 +62,9 @@
 
     <div class="card">
       <h3>👛 钱包连接</h3>
-      <button class="btn" id="connectBtn">连接 MetaMask</button>
+      <button class="btn" id="connectBtn">连接钱包（MetaMask/OKX）</button>
       <div class="info" id="account"></div>
+      <div class="info" id="walletType"></div>
     </div>
   </div>
 
@@ -71,25 +72,42 @@
     let provider, signer, userAddress;
 
     document.getElementById("connectBtn").onclick = async () => {
-      alert("按钮已点击，正在检测钱包…");
-      
+      alert("点击连接，正在检测钱包…");
       try {
-        if (!window.ethereum) {
-          alert("未检测到钱包插件，请安装 MetaMask！");
+        let ethereumProvider = null;
+
+        // 优先检测 OKX 钱包插件
+        if (window.okxwallet) {
+          ethereumProvider = window.okxwallet;
+          document.getElementById("walletType").innerText = "钱包类型：OKX Wallet";
+        }
+        // 再检测 MetaMask / OKX 手机浏览器
+        else if (window.ethereum) {
+          ethereumProvider = window.ethereum;
+          // 判断是不是 OKX
+          if (window.ethereum.isOkxWallet) {
+            document.getElementById("walletType").innerText = "钱包类型：OKX Wallet (App)";
+          } else {
+            document.getElementById("walletType").innerText = "钱包类型：MetaMask";
+          }
+        } else {
+          alert("未检测到 MetaMask 或 OKX 钱包，请先安装！");
           return;
         }
 
-        // 强制请求账号
-        const accounts = await window.ethereum.request({
+        // 请求连接账户
+        const accounts = await ethereumProvider.request({
           method: "eth_requestAccounts"
         });
 
-        provider = new ethers.BrowserProvider(window.ethereum);
+        // 用 ethers 连接
+        provider = new ethers.BrowserProvider(ethereumProvider);
         signer = await provider.getSigner();
         userAddress = accounts[0];
 
-        document.getElementById("account").innerText = "已连接：" + userAddress;
-        alert("钱包连接成功！\n地址：" + userAddress);
+        // 显示结果
+        document.getElementById("account").innerText = "✅ 已连接：" + userAddress;
+        alert("连接成功！\n地址：" + userAddress);
 
       } catch (err) {
         alert("连接失败：" + err.message);
