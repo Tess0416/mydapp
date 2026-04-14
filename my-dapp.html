@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>去中心化托管仲裁 DApp</title>
+  <script src="https://cdn.ethers.org/lib-ethers-6.13.0.umd.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    .header h1 {
+      font-size: 2rem;
+      color: #7dd3fc;
+    }
+    .header p {
+      color: #94a3b8;
+      margin-top: 0.4rem;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 1.2rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    .card h3 {
+      color: #e2e8f0;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .btn {
+      width: 100%;
+      padding: 0.9rem;
+      border-radius: 10px;
+      border: none;
+      font-weight: 600;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin: 0.4rem 0;
+    }
+    .btn-primary {
+      background: #0284c7;
+      color: white;
+    }
+    .btn-primary:hover {
+      background: #0369a1;
+    }
+    .btn-success {
+      background: #16a34a;
+      color: white;
+    }
+    .btn-success:hover {
+      background: #15803d;
+    }
+    .btn-warning {
+      background: #ca8a04;
+      color: white;
+    }
+    .btn-warning:hover {
+      background: #a16207;
+    }
+    .info {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      margin: 0.6rem 0;
+      word-break: break-all;
+    }
+    .status {
+      margin-top: 0.8rem;
+      padding: 0.6rem 1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+    .status.success {
+      background: rgba(22, 163, 74, 0.15);
+      color: #4ade80;
+    }
+    .status.loading {
+      background: rgba(2, 132, 199, 0.15);
+      color: #7dd3fc;
+    }
+    .label {
+      color: #cbd5e1;
+      font-weight: 500;
+      margin-bottom: 0.3rem;
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚖️ 去中心化托管仲裁 DApp</h1>
+      <p>基于 ARC 测试网 | 链上托管 | 不可篡改 | 仲裁放款</p>
+    </div>
+
+    <!-- 钱包连接 -->
+    <div class="card">
+      <h3>👛 钱包连接</h3>
+      <button class="btn btn-primary" id="connectBtn">连接 MetaMask</button>
+      <div class="info" id="account"></div>
+    </div>
+
+    <!-- 授权 + 托管 -->
+    <div class="card">
+      <h3>💰 资金托管（10 USDC）</h3>
+      <button class="btn btn-primary" id="approveBtn">授权 USDC</button>
+      <button class="btn btn-success" id="depositBtn">托管到链上合约</button>
+      <div class="status" id="status"></div>
+    </div>
+
+    <!-- 合约信息 -->
+    <div class="card">
+      <h3>📌 合约信息</h3>
+      <div class="label">USDC 地址</div>
+      <div class="info">0x3600000000000000000000000000000000000000</div>
+      <div class="label" style="margin-top:0.8rem">托管合约</div>
+      <div class="info">0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD</div>
+    </div>
+
+    <!-- 仲裁放款 -->
+    <div class="card">
+      <h3>⚖️ 仲裁放款（管理员）</h3>
+      <button class="btn btn-warning" id="releaseBtn">放款至当前账户</button>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 配置（你的真实链上信息）
+    // ==========================================
+    const USDC_ADDR = "0x3600000000000000000000000000000000000000";
+    const CONTRACT_ADDR = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+
+    const CONTRACT_ABI = [
+      "function deposit(uint256 amount) external",
+      "function release(address to, uint256 amount) external"
+    ];
+
+    const ERC20_ABI = [
+      "function approve(address spender, uint256 amount) external returns (bool)"
+    ];
+
+    let provider, signer, userAddress;
+
+    // 连接钱包
+    document.getElementById("connectBtn").onclick = async () => {
+      if (!window.ethereum) return alert("请安装 MetaMask");
+      try {
+        await window.ethereum.request({ method: "eth_requestAccounts" });
+        provider = new ethers.BrowserProvider(window.ethereum);
+        signer = await provider.getSigner();
+        userAddress = await signer.getAddress();
+        document.getElementById("account").innerText = "已连接：" + userAddress;
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    // 授权 USDC
+    document.getElementById("approveBtn").onclick = async () => {
+      if (!signer) return alert("请先连接钱包");
+      const st = document.getElementById("status");
+      st.className = "status loading";
+      st.innerText = "授权处理中...";
+      try {
+        const usdc = new ethers.Contract(USDC_ADDR, ERC20_ABI, signer);
+        const tx = await usdc.approve(CONTRACT_ADDR, ethers.parseUnits("10", 6));
+        await tx.wait();
+        st.className = "status success";
+        st.innerText = "✅ USDC 授权成功";
+      } catch (e) {
+        st.innerText = "❌ 授权失败";
+        console.error(e);
+      }
+    };
+
+    // 托管
+    document.getElementById("depositBtn").onclick = async () => {
+      if (!signer) return alert("请先连接钱包");
+      const st = document.getElementById("status");
+      st.className = "status loading";
+      st.innerText = "托管上链中...";
+      try {
+        const contract = new ethers.Contract(CONTRACT_ADDR, CONTRACT_ABI, signer);
+        const tx = await contract.deposit(ethers.parseUnits("10", 6));
+        await tx.wait();
+        st.className = "status success";
+        st.innerText = "✅ 托管成功！资金已锁入链上合约";
+      } catch (e) {
+        st.innerText = "❌ 托管失败";
+        console.error(e);
+      }
+    };
+
+    // 放款
+    document.getElementById("releaseBtn").onclick = async () => {
+      if (!signer) return alert("请先连接钱包");
+      try {
+        const contract = new ethers.Contract(CONTRACT_ADDR, CONTRACT_ABI, signer);
+        const tx = await contract.release(userAddress, ethers.parseUnits("10", 6));
+        await tx.wait();
+        alert("✅ 放款成功");
+      } catch (e) {
+        alert("❌ 仅管理员可放款");
+        console.error(e);
+      }
+    };
+  </script>
+</body>
+</html>
