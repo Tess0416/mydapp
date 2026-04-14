@@ -5,58 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>去中心化托管仲裁 DApp</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: Arial, sans-serif;
-    }
-    body {
-      background-color: #121212;
-      color: #fff;
-      padding: 20px;
-    }
-    .card {
-      background: #1e1e1e;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 16px;
-    }
-    .card h3 {
-      margin-bottom: 12px;
-      color: #ffcc00;
-    }
-    .btn {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      margin-bottom: 10px;
-      cursor: pointer;
-      transition: opacity 0.2s;
-    }
-    .btn:hover {
-      opacity: 0.9;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { background: #121212; color: #fff; padding: 20px; }
+    .card { background: #1e1e1e; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+    .card h3 { margin-bottom: 12px; color: #ffcc00; }
+    .btn { width: 100%; padding: 12px; font-size: 16px; border: none; border-radius: 8px; color: #fff; margin-bottom: 10px; cursor: pointer; }
     .btn-blue { background: #0071e3; }
     .btn-green { background: #22c55e; }
     .btn-orange { background: #f97316; }
-    .address {
-      background: #2a2a2a;
-      padding: 10px;
-      border-radius: 6px;
-      margin-top: 10px;
-      font-size: 14px;
-      word-break: break-all;
-      display: none;
-    }
-    .tip {
-      color: #ccc;
-      font-size: 12px;
-      margin-top: 4px;
-    }
+    .address { background: #2a2a2a; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; display: none; }
+    .tip { color: #ccc; font-size: 12px; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -65,7 +23,7 @@
   <h3>🔌 连接钱包</h3>
   <button class="btn btn-blue" id="connectBtn">连接钱包（OKX / MetaMask）</button>
   <div class="address" id="account"></div>
-  <div class="tip" id="connectTip">点击按钮后请在钱包中完成授权</div>
+  <div class="tip" id="tip"></div>
 </div>
 
 <div class="card">
@@ -82,81 +40,79 @@
 <script>
 let currentAccount = null;
 const provider = window.okxwallet || window.ethereum;
+const USDC = "0x6000000000000000000000000000000000000000";
+const ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
 
-// 连接钱包：只弹钱包授权，移除浏览器alert
+// 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
   if (!provider) {
-    // 仅首次检测不到钱包时提示，用DOM显示而非alert
-    document.getElementById("connectTip").innerText = "未检测到钱包，请安装OKX/MetaMask";
+    document.getElementById("tip").innerText = "未检测到钱包插件";
     return;
   }
-
   try {
-    // 仅触发钱包原生授权弹窗，无浏览器提示
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
-    
-    // 更新DOM显示连接状态，不弹框
-    const accountEl = document.getElementById("account");
-    accountEl.innerText = "已连接：" + currentAccount;
-    accountEl.style.display = "block";
-    document.getElementById("connectTip").innerText = "钱包连接成功";
-
-  } catch (err) {
-    // 错误信息也用DOM显示
-    document.getElementById("connectTip").innerText = "连接失败：" + err.message;
+    const el = document.getElementById("account");
+    el.innerText = "已连接：" + currentAccount;
+    el.style.display = "block";
+    document.getElementById("tip").innerText = "连接成功";
+  } catch (e) {
+    document.getElementById("tip").innerText = "连接失败：" + e.message;
   }
 };
 
-// 授权：直接触发钱包交易，无浏览器alert
+// 授权 USDC
 document.getElementById("approveBtn").onclick = async () => {
-  if (!currentAccount) {
-    document.getElementById("connectTip").innerText = "请先连接钱包";
-    return;
+  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  try {
+    await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: USDC,
+        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680"
+      }]
+    });
+    document.getElementById("tip").innerText = "授权交易已发送";
+  } catch (e) {
+    document.getElementById("tip").innerText = "授权已取消或失败";
   }
-  // 真实触发USDC授权交易（钱包会弹确认框）
-  await provider.request({
-    method: "eth_sendTransaction",
-    params: [{
-      from: currentAccount,
-      to: "0x6000000000000000000000000000000000000000", // USDC地址
-      data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680" // 授权10 USDC的calldata
-    }]
-  });
 };
 
-// 托管：直接触发合约交易，无浏览器alert
+// 托管
 document.getElementById("depositBtn").onclick = async () => {
-  if (!currentAccount) {
-    document.getElementById("connectTip").innerText = "请先连接钱包";
-    return;
+  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  try {
+    await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: ESCROW,
+        data: "0x47e7ef24000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680"
+      }]
+    });
+    document.getElementById("tip").innerText = "托管交易已发送";
+  } catch (e) {
+    document.getElementById("tip").innerText = "托管已取消或失败";
   }
-  // 真实触发托管交易（钱包会弹确认框）
-  await provider.request({
-    method: "eth_sendTransaction",
-    params: [{
-      from: currentAccount,
-      to: "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD", // 托管合约
-      data: "0x4e71d92d0000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680" // 托管10 USDC的calldata
-    }]
-  });
 };
 
-// 放款：直接触发合约交易，无浏览器alert
+// 放款
 document.getElementById("releaseBtn").onclick = async () => {
-  if (!currentAccount) {
-    document.getElementById("connectTip").innerText = "请先连接钱包";
-    return;
+  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  try {
+    await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: ESCROW,
+        data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2)
+      }]
+    });
+    document.getElementById("tip").innerText = "放款交易已发送";
+  } catch (e) {
+    document.getElementById("tip").innerText = "放款已取消或失败";
   }
-  // 真实触发放款交易（钱包会弹确认框）
-  await provider.request({
-    method: "eth_sendTransaction",
-    params: [{
-      from: currentAccount,
-      to: "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD", // 托管合约
-      data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2) // 放款到当前账户的calldata
-    }]
-  });
 };
 </script>
 </body>
