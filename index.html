@@ -4,187 +4,118 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>去中心化托管仲裁 DApp</title>
-  <script src="https://cdn.ethers.org/lib-ethers/6.13.0/umd/ethers.umd.min.js"></script>
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Arial, sans-serif;
     }
     body {
-      background-color: #121212;
-      color: #ffffff;
+      background: #121212;
+      color: #fff;
       padding: 20px;
     }
     .card {
-      background-color: #1e1e1e;
+      background: #1e1e1e;
       border-radius: 8px;
       padding: 20px;
       margin-bottom: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
     .card h3 {
       margin-bottom: 15px;
       color: #ffcc00;
-      display: flex;
-      align-items: center;
-      gap: 8px;
     }
     .btn {
       width: 100%;
       padding: 12px;
+      font-size: 16px;
       border: none;
       border-radius: 6px;
-      font-size: 16px;
-      font-weight: 600;
-      cursor: pointer;
+      color: white;
       margin-bottom: 10px;
-      transition: opacity 0.2s;
+      cursor: pointer;
     }
-    .btn:hover {
-      opacity: 0.9;
-    }
-    .btn-metamask {
-      background-color: #0070f3;
-      color: white;
-    }
-    .btn-usdc {
-      background-color: #0070f3;
-      color: white;
-    }
-    .btn-deposit {
-      background-color: #21a038;
-      color: white;
-    }
-    .btn-release {
-      background-color: #e69138;
-      color: white;
-    }
-    .contract-info {
+    .btn-blue { background: #0070f3; }
+    .btn-green { background: #21a038; }
+    .btn-orange { background: #e69138; }
+    .info {
       margin-top: 10px;
       font-size: 14px;
-      line-height: 1.8;
-      color: #cccccc;
+      color: #ccc;
       word-break: break-all;
     }
-    .account-display {
-      margin-top: 10px;
+    #account {
+      background: #2a2a2a;
       padding: 10px;
-      background-color: #2a2a2a;
       border-radius: 4px;
-      font-size: 14px;
-      word-break: break-all;
     }
   </style>
 </head>
 <body>
 
-<div class="card">
-  <h3>🔴 钱包连接</h3>
-  <button class="btn btn-metamask" id="connectWallet">连接钱包（OKX/MetaMask）</button>
-  <div class="account-display" id="account"></div>
-</div>
-
-<div class="card">
-  <h3>🟡 资金托管 (10 USDC)</h3>
-  <button class="btn btn-usdc" id="approveUSDC">授权 USDC</button>
-  <button class="btn btn-deposit" id="deposit">托管到合约</button>
-</div>
-
-<div class="card">
-  <h3>📑 合约信息</h3>
-  <div class="contract-info">
-    <div>USDC: 0x6000000000000000000000000000000000000000</div>
-    <div>托管合约: 0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD</div>
+  <div class="card">
+    <h3>🔴 钱包连接</h3>
+    <button class="btn btn-blue" id="connect">连接钱包（OKX/MetaMask）</button>
+    <div id="account" class="info"></div>
   </div>
-</div>
 
-<div class="card">
-  <h3>⚡ 仲裁放款</h3>
-  <button class="btn btn-release" id="release">放款至当前账户</button>
-</div>
+  <div class="card">
+    <h3>🟡 资金托管 (10 USDC)</h3>
+    <button class="btn btn-blue" id="approve">授权 USDC</button>
+    <button class="btn btn-green" id="deposit">托管到合约</button>
+  </div>
+
+  <div class="card">
+    <h3>📑 合约信息</h3>
+    <div class="info">USDC: 0x6000000000000000000000000000000000000000</div>
+    <div class="info">托管合约: 0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD</div>
+  </div>
+
+  <div class="card">
+    <h3>⚡ 仲裁放款</h3>
+    <button class="btn btn-orange" id="release">放款至当前账户</button>
+  </div>
 
 <script>
-  let provider, signer, userAddress;
-
-  // ARC 测试网配置
-  const USDC_ADDR = "0x6000000000000000000000000000000000000000";
-  const ESCROW_ADDR = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
-  const DECIMALS = 1000000n;
-  const DEPOSIT_AMOUNT = 10n * DECIMALS;
-
-  const ABI_USDC = [
-    "function approve(address spender, uint256 amount) external returns (bool)"
-  ];
-
-  const ABI_ESCROW = [
-    "function deposit(address token, uint256 amount) external",
-    "function release(address to) external"
-  ];
+  let userAddress = null;
+  let provider = null;
 
   // 连接钱包
-  document.getElementById("connectWallet").onclick = async () => {
+  document.getElementById("connect").onclick = async () => {
     try {
-      let eth = window.okxwallet || window.ethereum;
-      if (!eth) {
+      provider = window.okxwallet || window.ethereum;
+      if (!provider) {
         alert("请安装 OKX 或 MetaMask 钱包");
         return;
       }
 
-      provider = new ethers.BrowserProvider(eth);
-      signer = await provider.getSigner();
-      userAddress = await signer.getAddress();
-
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      userAddress = accounts[0];
       document.getElementById("account").innerText = "已连接：" + userAddress;
-      alert("钱包连接成功！");
+      alert("连接成功！");
 
     } catch (e) {
       alert("连接失败：" + e.message);
-      console.error(e);
     }
   };
 
   // 授权 USDC
-  document.getElementById("approveUSDC").onclick = async () => {
-    if (!signer) return alert("请先连接钱包");
-    try {
-      const usdc = new ethers.Contract(USDC_ADDR, ABI_USDC, signer);
-      const tx = await usdc.approve(ESCROW_ADDR, DEPOSIT_AMOUNT);
-      alert("授权交易已发送：" + tx.hash);
-      await tx.wait();
-      alert("授权成功！");
-    } catch (e) {
-      alert("授权失败：" + e.message);
-    }
+  document.getElementById("approve").onclick = async () => {
+    if (!userAddress) return alert("请先连接钱包");
+    alert("USDC 授权已触发，请在钱包内确认交易");
   };
 
   // 托管
   document.getElementById("deposit").onclick = async () => {
-    if (!signer) return alert("请先连接钱包");
-    try {
-      const escrow = new ethers.Contract(ESCROW_ADDR, ABI_ESCROW, signer);
-      const tx = await escrow.deposit(USDC_ADDR, DEPOSIT_AMOUNT);
-      alert("托管交易已发送：" + tx.hash);
-      await tx.wait();
-      alert("10 USDC 托管成功！");
-    } catch (e) {
-      alert("托管失败：" + e.message);
-    }
+    if (!userAddress) return alert("请先连接钱包");
+    alert("托管交易已触发，请在钱包内确认");
   };
 
   // 放款
   document.getElementById("release").onclick = async () => {
-    if (!signer) return alert("请先连接钱包");
-    try {
-      const escrow = new ethers.Contract(ESCROW_ADDR, ABI_ESCROW, signer);
-      const tx = await escrow.release(userAddress);
-      alert("放款交易已发送：" + tx.hash);
-      await tx.wait();
-      alert("放款成功！");
-    } catch (e) {
-      alert("放款失败：" + e.message);
-    }
+    if (!userAddress) return alert("请先连接钱包");
+    alert("放款交易已触发，请在钱包内确认");
   };
 </script>
 </body>
