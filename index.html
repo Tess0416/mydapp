@@ -40,28 +40,46 @@
 <script>
 let currentAccount = null;
 const provider = window.okxwallet || window.ethereum;
-const USDC = "0x6000000000000000000000000000000000000000";
-const ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+// ARC测试网配置
+const CONFIG = {
+  chainId: "0x" + 12345.toString(16), // 替换成ARC测试网真实链ID
+  USDC: "0x6000000000000000000000000000000000000000",
+  ESCROW: "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD",
+  gasPrice: "0x3B9ACA00", // 1 Gwei (十六进制)
+  gasLimit: "0x186A0" // 100000 (十六进制)
+};
 
-// 连接钱包
+// 连接钱包+切换ARC测试网
 document.getElementById("connectBtn").onclick = async () => {
   if (!provider) {
     document.getElementById("tip").innerText = "未检测到钱包插件";
     return;
   }
   try {
+    // 1. 切换到ARC测试网
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: CONFIG.chainId }]
+    });
+    // 2. 请求账户授权
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
+    // 3. 显示连接状态
     const el = document.getElementById("account");
     el.innerText = "已连接：" + currentAccount;
     el.style.display = "block";
-    document.getElementById("tip").innerText = "连接成功";
+    document.getElementById("tip").innerText = "已切换到ARC测试网并连接成功";
   } catch (e) {
-    document.getElementById("tip").innerText = "连接失败：" + e.message;
+    // 若链未添加，提示添加
+    if (e.code === 4902) {
+      document.getElementById("tip").innerText = "请先在钱包添加ARC测试网";
+    } else {
+      document.getElementById("tip").innerText = "连接失败：" + e.message;
+    }
   }
 };
 
-// 授权 USDC
+// 授权USDC（带Gas参数）
 document.getElementById("approveBtn").onclick = async () => {
   if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
   try {
@@ -69,17 +87,19 @@ document.getElementById("approveBtn").onclick = async () => {
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
-        to: USDC,
-        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680"
+        to: CONFIG.USDC,
+        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680",
+        gasPrice: CONFIG.gasPrice,
+        gasLimit: CONFIG.gasLimit
       }]
     });
-    document.getElementById("tip").innerText = "授权交易已发送";
+    document.getElementById("tip").innerText = "USDC授权交易已发送";
   } catch (e) {
-    document.getElementById("tip").innerText = "授权已取消或失败";
+    document.getElementById("tip").innerText = "授权取消或失败：" + e.message;
   }
 };
 
-// 托管
+// 托管到合约（带Gas参数）
 document.getElementById("depositBtn").onclick = async () => {
   if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
   try {
@@ -87,17 +107,19 @@ document.getElementById("depositBtn").onclick = async () => {
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
-        to: ESCROW,
-        data: "0x47e7ef24000000000000000000000000600000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680"
+        to: CONFIG.ESCROW,
+        data: "0x4e71d92d0000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680",
+        gasPrice: CONFIG.gasPrice,
+        gasLimit: CONFIG.gasLimit
       }]
     });
     document.getElementById("tip").innerText = "托管交易已发送";
   } catch (e) {
-    document.getElementById("tip").innerText = "托管已取消或失败";
+    document.getElementById("tip").innerText = "托管取消或失败：" + e.message;
   }
 };
 
-// 放款
+// 仲裁放款（带Gas参数）
 document.getElementById("releaseBtn").onclick = async () => {
   if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
   try {
@@ -105,13 +127,15 @@ document.getElementById("releaseBtn").onclick = async () => {
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
-        to: ESCROW,
-        data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2)
+        to: CONFIG.ESCROW,
+        data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2),
+        gasPrice: CONFIG.gasPrice,
+        gasLimit: CONFIG.gasLimit
       }]
     });
     document.getElementById("tip").innerText = "放款交易已发送";
   } catch (e) {
-    document.getElementById("tip").innerText = "放款已取消或失败";
+    document.getElementById("tip").innerText = "放款取消或失败：" + e.message;
   }
 };
 </script>
