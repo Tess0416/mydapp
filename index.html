@@ -3,120 +3,91 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>去中心化托管仲裁 DApp</title>
+  <title>托管 DApp</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: Arial, sans-serif;
-    }
-    body {
-      background: #121212;
-      color: #fff;
-      padding: 20px;
-    }
-    .card {
-      background: #1e1e1e;
-      border-radius: 8px;
-      padding: 20px;
-      margin-bottom: 20px;
-    }
-    .card h3 {
-      margin-bottom: 15px;
-      color: #ffcc00;
-    }
-    .btn {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      color: white;
-      margin-bottom: 10px;
-      cursor: pointer;
-    }
-    .btn-blue { background: #0070f3; }
-    .btn-green { background: #21a038; }
-    .btn-orange { background: #e69138; }
-    .info {
-      margin-top: 10px;
-      font-size: 14px;
-      color: #ccc;
-      word-break: break-all;
-    }
-    #account {
-      background: #2a2a2a;
-      padding: 10px;
-      border-radius: 4px;
-    }
+    body { background: #121212; color: #fff; padding: 20px; font-family: Arial; }
+    .card { background: #1e1e1e; padding: 20px; border-radius: 10px; margin-bottom: 15px; }
+    .btn { width: 100%; padding: 12px; font-size: 16px; margin: 5px 0; border: none; border-radius: 6px; color: white; cursor: pointer; }
+    .blue { background: #0071e3; }
+    .green { background: #22c55e; }
+    .orange { background: #f97316; }
+    .addr { background: #222; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; }
   </style>
 </head>
 <body>
 
   <div class="card">
-    <h3>🔴 钱包连接</h3>
-    <button class="btn btn-blue" id="connect">连接钱包（OKX/MetaMask）</button>
-    <div id="account" class="info"></div>
+    <h3>🔌 连接钱包</h3>
+    <button class="btn blue" id="connect">连接 OKX / MetaMask</button>
+    <div id="address" class="addr"></div>
   </div>
 
   <div class="card">
-    <h3>🟡 资金托管 (10 USDC)</h3>
-    <button class="btn btn-blue" id="approve">授权 USDC</button>
-    <button class="btn btn-green" id="deposit">托管到合约</button>
+    <h3>💰 授权并托管 10 USDC</h3>
+    <button class="btn blue" id="approve">授权 USDC</button>
+    <button class="btn green" id="deposit">托管到合约</button>
   </div>
 
   <div class="card">
-    <h3>📑 合约信息</h3>
-    <div class="info">USDC: 0x6000000000000000000000000000000000000000</div>
-    <div class="info">托管合约: 0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD</div>
+    <h3>⚖️ 仲裁放款</h3>
+    <button class="btn orange" id="release">放款到当前账户</button>
   </div>
 
   <div class="card">
-    <h3>⚡ 仲裁放款</h3>
-    <button class="btn btn-orange" id="release">放款至当前账户</button>
+    <h3>📄 ARC 测试网地址</h3>
+    <div class="addr">USDC: 0x6000000000000000000000000000000000000000</div>
+    <div class="addr">托管: 0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD</div>
   </div>
 
-<script>
-  let userAddress = null;
-  let provider = null;
+  <script src="https://cdn.ethers.org/lib-ethers/6.13.0/umd/ethers.umd.min.js"></script>
+  <script>
+    let signer;
+    const USDC = "0x6000000000000000000000000000000000000000";
+    const ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+    const amount = ethers.parseUnits("10", 6);
 
-  // 连接钱包
-  document.getElementById("connect").onclick = async () => {
-    try {
-      provider = window.okxwallet || window.ethereum;
-      if (!provider) {
-        alert("请安装 OKX 或 MetaMask 钱包");
-        return;
+    // 连接钱包（会弹确认）
+    document.getElementById("connect").onclick = async () => {
+      try {
+        const p = new ethers.BrowserProvider(window.okxwallet || window.ethereum);
+        signer = await p.getSigner();
+        const addr = await signer.getAddress();
+        document.getElementById("address").innerText = "已连接：" + addr;
+        alert("连接成功 ✅");
+      } catch (e) {
+        alert("失败：" + e.message);
       }
+    };
 
-      const accounts = await provider.request({ method: "eth_requestAccounts" });
-      userAddress = accounts[0];
-      document.getElementById("account").innerText = "已连接：" + userAddress;
-      alert("连接成功！");
+    // 授权 USDC
+    document.getElementById("approve").onclick = async () => {
+      if (!signer) return alert("先连钱包");
+      const c = new ethers.Contract(USDC, ["function approve(address,uint256)"], signer);
+      const tx = await c.approve(ESCROW, amount);
+      alert("授权已发送：" + tx.hash);
+      await tx.wait();
+      alert("授权成功 ✅");
+    };
 
-    } catch (e) {
-      alert("连接失败：" + e.message);
-    }
-  };
+    // 托管
+    document.getElementById("deposit").onclick = async () => {
+      if (!signer) return alert("先连钱包");
+      const c = new ethers.Contract(ESCROW, ["function deposit(address,uint256)"], signer);
+      const tx = await c.deposit(USDC, amount);
+      alert("托管已发送：" + tx.hash);
+      await tx.wait();
+      alert("托管成功 ✅");
+    };
 
-  // 授权 USDC
-  document.getElementById("approve").onclick = async () => {
-    if (!userAddress) return alert("请先连接钱包");
-    alert("USDC 授权已触发，请在钱包内确认交易");
-  };
-
-  // 托管
-  document.getElementById("deposit").onclick = async () => {
-    if (!userAddress) return alert("请先连接钱包");
-    alert("托管交易已触发，请在钱包内确认");
-  };
-
-  // 放款
-  document.getElementById("release").onclick = async () => {
-    if (!userAddress) return alert("请先连接钱包");
-    alert("放款交易已触发，请在钱包内确认");
-  };
-</script>
+    // 放款
+    document.getElementById("release").onclick = async () => {
+      if (!signer) return alert("先连钱包");
+      const c = new ethers.Contract(ESCROW, ["function release(address)"], signer);
+      const tx = await c.release(await signer.getAddress());
+      alert("放款已发送：" + tx.hash);
+      await tx.wait();
+      alert("放款成功 ✅");
+    };
+  </script>
 </body>
 </html>
