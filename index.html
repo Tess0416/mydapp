@@ -15,6 +15,16 @@
     .btn-orange { background: #f97316; }
     .address { background: #2a2a2a; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; display: none; }
     .tip { color: #ccc; font-size: 12px; margin-top: 4px; }
+    input {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #222;
+      color: #fff;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
@@ -27,7 +37,8 @@
 </div>
 
 <div class="card">
-  <h3>💰 授权并托管 10 USDC</h3>
+  <h3>💰 授权并托管 USDC</h3>
+  <input type="number" id="amountInput" placeholder="输入 USDC 金额，例如 10" />
   <button class="btn btn-blue" id="approveBtn">授权 USDC</button>
   <button class="btn btn-green" id="depositBtn">托管到合约</button>
 </div>
@@ -61,16 +72,29 @@ document.getElementById("connectBtn").onclick = async () => {
   }
 };
 
+// 获取输入金额，并转为 6 位小数
+function getAmount() {
+  const input = document.getElementById("amountInput").value.trim();
+  if (!input || isNaN(input) || Number(input) <= 0) {
+    alert("请输入正确金额");
+    return null;
+  }
+  return (BigInt(input) * 10n ** 6n).toString(16).padStart(64, '0');
+}
+
 // 授权 USDC
 document.getElementById("approveBtn").onclick = async () => {
   if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  const amountHex = getAmount();
+  if (!amountHex) return;
+
   try {
     await provider.request({
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
         to: USDC,
-        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd0000000000000000000000000000000000000000000000000000000000989680"
+        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd" + amountHex
       }]
     });
     document.getElementById("tip").innerText = "授权交易已发起";
@@ -82,13 +106,16 @@ document.getElementById("approveBtn").onclick = async () => {
 // 托管
 document.getElementById("depositBtn").onclick = async () => {
   if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  const amountHex = getAmount();
+  if (!amountHex) return;
+
   try {
     await provider.request({
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
         to: ESCROW,
-        data: "0x47e7ef240000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000989680"
+        data: "0x47e7ef24000000000000000000000000600000000000000000000000000000000" + amountHex
       }]
     });
     document.getElementById("tip").innerText = "托管交易已发起";
