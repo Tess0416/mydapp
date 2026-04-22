@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ARC ERC-8183 仲裁托管 DApp</title>
+  <title>ARC ERC-8183 官方标准 DApp</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -31,146 +31,160 @@
 </div>
 
 <div class="card">
-  <h3>📝 创建 ARC 任务 (createJob)</h3>
-  <input placeholder="输入提供者地址" id="providerAddr">
+  <h3>📝 createJob（官方 5 参版）</h3>
+  <input placeholder="provider 地址" id="provider" value="0x">
+  <input placeholder="evaluator 地址" id="evaluator" value="0x">
+  <input placeholder="USDC 金额" id="amountInput" type="number">
   <button class="btn btn-blue" id="createJobBtn">创建 Job</button>
   <div class="info" id="jobIdBox" style="display:none">Job ID: <span id="jobId"></span></div>
 </div>
 
 <div class="card">
-  <h3>💰 设置预算 & 授权 USDC</h3>
-  <input type="number" placeholder="USDC 金额" id="amountInput">
-  <button class="btn btn-blue" id="approveBtn">授权 USDC 给 ARC</button>
+  <h3>💰 setBudget（必须 Provider 调用）</h3>
+  <button class="btn btn-blue" id="setBudgetBtn">设置预算</button>
 </div>
 
 <div class="card">
-  <h3>📥 资金托管 (fund)</h3>
-  <button class="btn btn-green" id="fundBtn">执行 fund 托管</button>
+  <h3>✅ 授权 USDC</h3>
+  <button class="btn btn-blue" id="approveBtn">授权给 ARC 合约</button>
 </div>
 
 <div class="card">
-  <h3>⚖️ 仲裁放款</h3>
-  <button class="btn btn-orange" id="releaseBtn">放款</button>
+  <h3>📥 fund（托管）</h3>
+  <button class="btn btn-green" id="fundBtn">执行 fund</button>
+</div>
+
+<div class="card">
+  <h3>📤 submit（提交结果）</h3>
+  <button class="btn btn-orange" id="submitBtn">submit</button>
+</div>
+
+<div class="card">
+  <h3>✅ complete（放款结算）</h3>
+  <button class="btn btn-orange" id="completeBtn">complete</button>
 </div>
 
 <script>
 let currentAccount = null;
-let currentJobId = 1; // 实际应从 createJob 返回获取
+let jobId = null;
 
 const provider = window.okxwallet || window.ethereum;
-
-// ===== 官方 ARC 合约地址（来自文档）=====
 const USDC = "0x3600000000000000000000000000000000000000";
-const ARC_ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD"; // 你提供的合约
+const ARC = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+
+function tip(s) { document.getElementById("tip").innerText = s; }
+function uint(v) { return BigInt(v).toString(16).padStart(64, '0'); }
+function addr(a) { return a.slice(2).padStart(64, '0'); }
+function emptyBytes() { return uint(0x60) + uint(0); }
+function emptyString() { return uint(0x80) + uint(0); }
 
 // 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
-  if (!provider) return tip("未检测到钱包");
+  if (!provider) return tip("未安装钱包");
   try {
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
-    const el = document.getElementById("account");
-    el.innerText = currentAccount;
-    el.style.display = "block";
+    document.getElementById("account").innerText = currentAccount;
+    document.getElementById("account").style.display = "block";
     tip("连接成功");
   } catch (e) { tip("连接失败"); }
 };
 
-// 工具
-function tip(s) { document.getElementById("tip").innerText = s; }
-function toHex64(n) { return BigInt(n).toString(16).padStart(64, '0'); }
-function addrHex(s) { return s.slice(2).padStart(64, '0'); }
-
-// 1. createJob（简化）
+// =============================================================================
+// 官方 createJob 5 参：
+// createJob(address provider, address evaluator, uint256 expiredAt, string description, address hook)
+// selector: 0x51cff973
+// =============================================================================
 document.getElementById("createJobBtn").onclick = async () => {
   if (!currentAccount) return tip("请连接钱包");
-  try {
-    // createJob(address provider, uint256 expiry, bytes calldata spec)
-    // selector: 0x19307a90
-    const providerAddr = document.getElementById("providerAddr").value || currentAccount;
-    const expiry = Math.floor(Date.now()/1000 + 3600*24*7);
+  const p = document.getElementById("provider").value;
+  const e = document.getElementById("evaluator").value;
+  const expiredAt = Math.floor(Date.now()/1000 + 86400*7);
+  const hook = "0x0000000000000000000000000000000000000000";
 
-    const tx = await provider.request({
+  try {
+    const data = "0x51cff973"
+      + addr(p)
+      + addr(e)
+      + uint(expiredAt)
+      + emptyString()
+      + addr(hook);
+
+    await provider.request({
       method: "eth_sendTransaction",
-      params: [{
-        from: currentAccount,
-        to: ARC_ESCROW,
-        data: "0x19307a90"
-          + addrHex(providerAddr)
-          + toHex64(expiry)
-          + "0000000000000000000000000000000000000000000000000000000000000040"
-          + "0000000000000000000000000000000000000000000000000000000000000000"
-      }]
+      params: [{ from: currentAccount, to: ARC, data }]
     });
-    tip("创建 job 成功，jobId = " + currentJobId);
+
+    jobId = 1; // 正式需从日志解析
     document.getElementById("jobIdBox").style.display = "block";
-    document.getElementById("jobId").innerText = currentJobId;
-  } catch (e) { tip("createJob 失败"); }
+    document.getElementById("jobId").innerText = jobId;
+    tip("createJob 成功");
+  } catch (e) { tip("createJob revert"); console.error(e); }
 };
 
-// 2. 授权 USDC 给 ARC 合约
+// =============================================================================
+// setBudget(uint256 jobId, uint256 amount, bytes calldata optParams)
+// selector: 0x2a6129fd
+// =============================================================================
+document.getElementById("setBudgetBtn").onclick = async () => {
+  if (!jobId) return tip("先创建 job");
+  const amt = BigInt(document.getElementById("amountInput").value) * 10n**6n;
+  try {
+    const data = "0x2a6129fd" + uint(jobId) + uint(amt) + emptyBytes();
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    tip("setBudget 成功");
+  } catch (e) { tip("setBudget 失败"); }
+};
+
+// =============================================================================
+// approve USDC
+// =============================================================================
 document.getElementById("approveBtn").onclick = async () => {
-  if (!currentAccount) return tip("请连接钱包");
-  const v = document.getElementById("amountInput").value;
-  if (!v || isNaN(v)) return tip("输入金额");
-  const amount = BigInt(v) * 10n ** 6n;
-
+  const amt = BigInt(document.getElementById("amountInput").value) * 10n**6n;
   try {
-    await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
-        from: currentAccount,
-        to: USDC,
-        data: "0x095ea7b3" + addrHex(ARC_ESCROW) + toHex64(amount)
-      }]
-    });
-    tip("USDC 授权成功");
-  } catch (e) { tip("授权取消"); }
+    const data = "0x095ea7b3" + addr(ARC) + uint(amt);
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: USDC, data }] });
+    tip("授权成功");
+  } catch (e) { tip("授权失败"); }
 };
 
-// 3. fund(uint256 jobId, bytes optParams) —— 正确 ERC-8183
+// =============================================================================
+// fund(uint256 jobId, bytes calldata optParams)
+// selector: 0x3c624d2e
+// =============================================================================
 document.getElementById("fundBtn").onclick = async () => {
-  if (!currentAccount) return tip("请连接钱包");
+  if (!jobId) return;
   try {
-    // selector: fund(uint256,bytes) → 0x3c624d2e
-    await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
-        from: currentAccount,
-        to: ARC_ESCROW,
-        data: "0x3c624d2e"
-          + toHex64(currentJobId)
-          + "0000000000000000000000000000000000000000000000000000000000000040"
-          + "0000000000000000000000000000000000000000000000000000000000000000"
-      }]
-    });
-    tip("fund 托管成功！");
-  } catch (e) {
-    tip("fund 失败：合约 revert 或参数错误");
-  }
+    const data = "0x3c624d2e" + uint(jobId) + emptyBytes();
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    tip("fund 成功");
+  } catch (e) { tip("fund 失败"); }
 };
 
-// 4. 放款 release/resolve
-document.getElementById("releaseBtn").onclick = async () => {
-  if (!currentAccount) return tip("请连接钱包");
+// =============================================================================
+// submit(uint256 jobId, bytes32 hash, bytes calldata data)
+// selector: 0xa15557b7
+// =============================================================================
+document.getElementById("submitBtn").onclick = async () => {
+  if (!jobId) return;
   try {
-    // resolve(uint256 jobId, bool success, bytes calldata result)
-    await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
-        from: currentAccount,
-        to: ARC_ESCROW,
-        data: "0x065558d4"
-          + toHex64(currentJobId)
-          + "0000000000000000000000000000000000000000000000000000000000000001"
-          + "0000000000000000000000000000000000000000000000000000000000000060"
-          + "0000000000000000000000000000000000000000000000000000000000000000"
-      }]
-    });
-    tip("放款执行成功");
-  } catch (e) {
-    tip("放款失败");
-  }
+    const data = "0xa15557b7" + uint(jobId) + uint(0) + emptyBytes();
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    tip("submit 成功");
+  } catch (e) { tip("submit 失败"); }
+};
+
+// =============================================================================
+// complete(uint256 jobId, bool success)
+// selector: 0x4552d7ab
+// =============================================================================
+document.getElementById("completeBtn").onclick = async () => {
+  if (!jobId) return;
+  try {
+    const data = "0x4552d7ab" + uint(jobId) + uint(1);
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    tip("complete 放款成功");
+  } catch (e) { tip("放款失败"); }
 };
 </script>
 </body>
