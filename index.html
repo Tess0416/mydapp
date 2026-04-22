@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ARC ERC-8183 官方标准 DApp</title>
+  <title>Arc ERC-8183 Job 托管系统</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -31,36 +31,36 @@
 </div>
 
 <div class="card">
-  <h3>📝 createJob（官方 5 参版）</h3>
-  <input placeholder="provider 地址" id="provider" value="0x">
-  <input placeholder="evaluator 地址" id="evaluator" value="0x">
-  <input placeholder="USDC 金额" id="amountInput" type="number">
-  <button class="btn btn-blue" id="createJobBtn">创建 Job</button>
-  <div class="info" id="jobIdBox" style="display:none">Job ID: <span id="jobId"></span></div>
+  <h3>📝 创建 Job ERC-8183</h3>
+  <input placeholder="Provider 地址" id="provider" value="0x">
+  <input placeholder="Evaluator 地址" id="evaluator" value="0x">
+  <input type="number" placeholder="USDC 金额" id="amountInput">
+  <button class="btn btn-blue" id="createJobBtn">createJob</button>
+  <div class="info" id="jobBox" style="display:none">Job ID: <span id="jobId"></span></div>
 </div>
 
 <div class="card">
   <h3>💰 setBudget（必须 Provider 调用）</h3>
-  <button class="btn btn-blue" id="setBudgetBtn">设置预算</button>
+  <button class="btn btn-blue" id="setBudgetBtn">setBudget</button>
 </div>
 
 <div class="card">
   <h3>✅ 授权 USDC</h3>
-  <button class="btn btn-blue" id="approveBtn">授权给 ARC 合约</button>
+  <button class="btn btn-blue" id="approveBtn">approve</button>
 </div>
 
 <div class="card">
-  <h3>📥 fund（托管）</h3>
-  <button class="btn btn-green" id="fundBtn">执行 fund</button>
+  <h3>📥 fund 托管</h3>
+  <button class="btn btn-green" id="fundBtn">fund</button>
 </div>
 
 <div class="card">
-  <h3>📤 submit（提交结果）</h3>
+  <h3>📤 submit 提交</h3>
   <button class="btn btn-orange" id="submitBtn">submit</button>
 </div>
 
 <div class="card">
-  <h3>✅ complete（放款结算）</h3>
+  <h3>✅ complete 放款</h3>
   <button class="btn btn-orange" id="completeBtn">complete</button>
 </div>
 
@@ -69,37 +69,40 @@ let currentAccount = null;
 let jobId = null;
 
 const provider = window.okxwallet || window.ethereum;
+
+// 官方 Arc 地址
 const USDC = "0x3600000000000000000000000000000000000000";
-const ARC = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+const ARC_ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
 
 function tip(s) { document.getElementById("tip").innerText = s; }
-function uint(v) { return BigInt(v).toString(16).padStart(64, '0'); }
+function uint(x) { return BigInt(x).toString(16).padStart(64, '0'); }
 function addr(a) { return a.slice(2).padStart(64, '0'); }
-function emptyBytes() { return uint(0x60) + uint(0); }
-function emptyString() { return uint(0x80) + uint(0); }
+function emptyBytes() { return uint(0x40) + uint(0); }
+function emptyString() { return uint(0x60) + uint(0); }
 
 // 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
-  if (!provider) return tip("未安装钱包");
+  if (!provider) return tip("未检测到钱包");
   try {
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
-    document.getElementById("account").innerText = currentAccount;
-    document.getElementById("account").style.display = "block";
+    const el = document.getElementById("account");
+    el.innerText = currentAccount;
+    el.style.display = "block";
     tip("连接成功");
-  } catch (e) { tip("连接失败"); }
+  } catch (e) { tip("连接失败"); console.error(e); }
 };
 
 // =============================================================================
-// 官方 createJob 5 参：
-// createJob(address provider, address evaluator, uint256 expiredAt, string description, address hook)
+// ERC-8183 createJob 5 参官方签名
+// createJob(provider, evaluator, expiredAt, description, hook)
 // selector: 0x51cff973
 // =============================================================================
 document.getElementById("createJobBtn").onclick = async () => {
   if (!currentAccount) return tip("请连接钱包");
   const p = document.getElementById("provider").value;
   const e = document.getElementById("evaluator").value;
-  const expiredAt = Math.floor(Date.now()/1000 + 86400*7);
+  const expiredAt = Math.floor(Date.now() / 1000 + 86400 * 7);
   const hook = "0x0000000000000000000000000000000000000000";
 
   try {
@@ -112,26 +115,26 @@ document.getElementById("createJobBtn").onclick = async () => {
 
     await provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: currentAccount, to: ARC, data }]
+      params: [{ from: currentAccount, to: ARC_ESCROW, data }]
     });
 
-    jobId = 1; // 正式需从日志解析
-    document.getElementById("jobIdBox").style.display = "block";
+    jobId = 1;
+    document.getElementById("jobBox").style.display = "block";
     document.getElementById("jobId").innerText = jobId;
     tip("createJob 成功");
-  } catch (e) { tip("createJob revert"); console.error(e); }
+  } catch (e) { tip("createJob 失败"); console.error(e); }
 };
 
 // =============================================================================
-// setBudget(uint256 jobId, uint256 amount, bytes calldata optParams)
+// setBudget(uint256 jobId, uint256 amount, bytes optParams)
 // selector: 0x2a6129fd
 // =============================================================================
 document.getElementById("setBudgetBtn").onclick = async () => {
-  if (!jobId) return tip("先创建 job");
-  const amt = BigInt(document.getElementById("amountInput").value) * 10n**6n;
+  if (!jobId) return tip("请先创建 Job");
+  const amt = BigInt(document.getElementById("amountInput").value) * 10n ** 6n;
   try {
     const data = "0x2a6129fd" + uint(jobId) + uint(amt) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
     tip("setBudget 成功");
   } catch (e) { tip("setBudget 失败"); }
 };
@@ -140,24 +143,25 @@ document.getElementById("setBudgetBtn").onclick = async () => {
 // approve USDC
 // =============================================================================
 document.getElementById("approveBtn").onclick = async () => {
-  const amt = BigInt(document.getElementById("amountInput").value) * 10n**6n;
+  if (!jobId) return;
+  const amt = BigInt(document.getElementById("amountInput").value) * 10n ** 6n;
   try {
-    const data = "0x095ea7b3" + addr(ARC) + uint(amt);
+    const data = "0x095ea7b3" + addr(ARC_ESCROW) + uint(amt);
     await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: USDC, data }] });
     tip("授权成功");
   } catch (e) { tip("授权失败"); }
 };
 
 // =============================================================================
-// fund(uint256 jobId, bytes calldata optParams)
+// fund(uint256 jobId, bytes optParams)
 // selector: 0x3c624d2e
 // =============================================================================
 document.getElementById("fundBtn").onclick = async () => {
   if (!jobId) return;
   try {
     const data = "0x3c624d2e" + uint(jobId) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
-    tip("fund 成功");
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
+    tip("fund 托管成功");
   } catch (e) { tip("fund 失败"); }
 };
 
@@ -169,7 +173,7 @@ document.getElementById("submitBtn").onclick = async () => {
   if (!jobId) return;
   try {
     const data = "0xa15557b7" + uint(jobId) + uint(0) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
     tip("submit 成功");
   } catch (e) { tip("submit 失败"); }
 };
@@ -182,8 +186,8 @@ document.getElementById("completeBtn").onclick = async () => {
   if (!jobId) return;
   try {
     const data = "0x4552d7ab" + uint(jobId) + uint(1);
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC, data }] });
-    tip("complete 放款成功");
+    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
+    tip("放款成功");
   } catch (e) { tip("放款失败"); }
 };
 </script>
