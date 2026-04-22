@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Arc ERC-8183 Job 托管系统</title>
+  <title>Arc 官方 USDC 托管交互</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -31,54 +31,43 @@
 </div>
 
 <div class="card">
-  <h3>📝 创建 Job ERC-8183</h3>
-  <input placeholder="Provider 地址" id="provider" value="0x">
-  <input placeholder="Evaluator 地址" id="evaluator" value="0x">
-  <input type="number" placeholder="USDC 金额" id="amountInput">
-  <button class="btn btn-blue" id="createJobBtn">createJob</button>
-  <div class="info" id="jobBox" style="display:none">Job ID: <span id="jobId"></span></div>
+  <h3>💰 授权 USDC → FxEscrow（官方托管）</h3>
+  <input type="number" placeholder="输入 USDC 金额" id="amountInput">
+  <button class="btn btn-blue" id="approveBtn">授权 USDC</button>
 </div>
 
 <div class="card">
-  <h3>💰 setBudget（必须 Provider 调用）</h3>
-  <button class="btn btn-blue" id="setBudgetBtn">setBudget</button>
+  <h3>📥 托管到官方 FxEscrow</h3>
+  <button class="btn btn-green" id="depositBtn">执行托管</button>
 </div>
 
 <div class="card">
-  <h3>✅ 授权 USDC</h3>
-  <button class="btn btn-blue" id="approveBtn">approve</button>
-</div>
-
-<div class="card">
-  <h3>📥 fund 托管</h3>
-  <button class="btn btn-green" id="fundBtn">fund</button>
-</div>
-
-<div class="card">
-  <h3>📤 submit 提交</h3>
-  <button class="btn btn-orange" id="submitBtn">submit</button>
-</div>
-
-<div class="card">
-  <h3>✅ complete 放款</h3>
-  <button class="btn btn-orange" id="completeBtn">complete</button>
+  <h3>⚖️ 放款/赎回</h3>
+  <button class="btn btn-orange" id="releaseBtn">释放资金</button>
 </div>
 
 <script>
 let currentAccount = null;
-let jobId = null;
-
 const provider = window.okxwallet || window.ethereum;
 
-// 官方 Arc 地址
+// ======================
+// 官方 Arc 测试网合约地址（来自你提供的文档）
+// ======================
 const USDC = "0x3600000000000000000000000000000000000000";
-const ARC_ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+const FxEscrow = "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8";
+const Permit2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
-function tip(s) { document.getElementById("tip").innerText = s; }
-function uint(x) { return BigInt(x).toString(16).padStart(64, '0'); }
-function addr(a) { return a.slice(2).padStart(64, '0'); }
-function emptyBytes() { return uint(0x40) + uint(0); }
-function emptyString() { return uint(0x60) + uint(0); }
+function tip(text) {
+  document.getElementById("tip").innerText = text;
+}
+
+function toHex64(value) {
+  return BigInt(value).toString(16).padStart(64, "0");
+}
+
+function addressToHex(addr) {
+  return addr.slice(2).padStart(64, "0");
+}
 
 // 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
@@ -86,109 +75,83 @@ document.getElementById("connectBtn").onclick = async () => {
   try {
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
-    const el = document.getElementById("account");
-    el.innerText = currentAccount;
-    el.style.display = "block";
+    const accEl = document.getElementById("account");
+    accEl.innerText = currentAccount;
+    accEl.style.display = "block";
     tip("连接成功");
-  } catch (e) { tip("连接失败"); console.error(e); }
+  } catch (e) {
+    tip("连接失败");
+  }
 };
 
-// =============================================================================
-// ERC-8183 createJob 5 参官方签名
-// createJob(provider, evaluator, expiredAt, description, hook)
-// selector: 0x51cff973
-// =============================================================================
-document.getElementById("createJobBtn").onclick = async () => {
-  if (!currentAccount) return tip("请连接钱包");
-  const p = document.getElementById("provider").value;
-  const e = document.getElementById("evaluator").value;
-  const expiredAt = Math.floor(Date.now() / 1000 + 86400 * 7);
-  const hook = "0x0000000000000000000000000000000000000000";
+// ------------------------------
+// 1. 授权 USDC 给官方 FxEscrow（完全标准 ERC20 approve）
+// ------------------------------
+document.getElementById("approveBtn").onclick = async () => {
+  if (!currentAccount) return tip("请先连接钱包");
+  const input = document.getElementById("amountInput").value;
+  if (!input || isNaN(input) || Number(input) <= 0) return tip("输入有效金额");
+
+  const amount = BigInt(input) * 10n ** 6n; // 官方 USDC 6 位小数
 
   try {
-    const data = "0x51cff973"
-      + addr(p)
-      + addr(e)
-      + uint(expiredAt)
-      + emptyString()
-      + addr(hook);
-
     await provider.request({
       method: "eth_sendTransaction",
-      params: [{ from: currentAccount, to: ARC_ESCROW, data }]
+      params: [{
+        from: currentAccount,
+        to: USDC,
+        data: "0x095ea7b3" + addressToHex(FxEscrow) + toHex64(amount)
+      }]
     });
-
-    jobId = 1;
-    document.getElementById("jobBox").style.display = "block";
-    document.getElementById("jobId").innerText = jobId;
-    tip("createJob 成功");
-  } catch (e) { tip("createJob 失败"); console.error(e); }
-};
-
-// =============================================================================
-// setBudget(uint256 jobId, uint256 amount, bytes optParams)
-// selector: 0x2a6129fd
-// =============================================================================
-document.getElementById("setBudgetBtn").onclick = async () => {
-  if (!jobId) return tip("请先创建 Job");
-  const amt = BigInt(document.getElementById("amountInput").value) * 10n ** 6n;
-  try {
-    const data = "0x2a6129fd" + uint(jobId) + uint(amt) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
-    tip("setBudget 成功");
-  } catch (e) { tip("setBudget 失败"); }
-};
-
-// =============================================================================
-// approve USDC
-// =============================================================================
-document.getElementById("approveBtn").onclick = async () => {
-  if (!jobId) return;
-  const amt = BigInt(document.getElementById("amountInput").value) * 10n ** 6n;
-  try {
-    const data = "0x095ea7b3" + addr(ARC_ESCROW) + uint(amt);
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: USDC, data }] });
     tip("授权成功");
-  } catch (e) { tip("授权失败"); }
+  } catch (e) {
+    tip("授权已取消");
+  }
 };
 
-// =============================================================================
-// fund(uint256 jobId, bytes optParams)
-// selector: 0x3c624d2e
-// =============================================================================
-document.getElementById("fundBtn").onclick = async () => {
-  if (!jobId) return;
+// ------------------------------
+// 2. 托管 deposit（官方 escrow 标准）
+// ------------------------------
+document.getElementById("depositBtn").onclick = async () => {
+  if (!currentAccount) return tip("请先连接钱包");
+  const input = document.getElementById("amountInput").value;
+  if (!input) return tip("输入金额");
+
+  const amount = BigInt(input) * 10n ** 6n;
+
   try {
-    const data = "0x3c624d2e" + uint(jobId) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
-    tip("fund 托管成功");
-  } catch (e) { tip("fund 失败"); }
+    await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: FxEscrow,
+        data: "0xd945d9f8" + toHex64(amount) // deposit(uint256)
+      }]
+    });
+    tip("托管成功");
+  } catch (e) {
+    tip("托管失败：合约 revert");
+  }
 };
 
-// =============================================================================
-// submit(uint256 jobId, bytes32 hash, bytes calldata data)
-// selector: 0xa15557b7
-// =============================================================================
-document.getElementById("submitBtn").onclick = async () => {
-  if (!jobId) return;
+// ------------------------------
+// 3. 释放/赎回（官方 withdraw）
+// ------------------------------
+document.getElementById("releaseBtn").onclick = async () => {
+  if (!currentAccount) return tip("请先连接钱包");
   try {
-    const data = "0xa15557b7" + uint(jobId) + uint(0) + emptyBytes();
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
-    tip("submit 成功");
-  } catch (e) { tip("submit 失败"); }
-};
-
-// =============================================================================
-// complete(uint256 jobId, bool success)
-// selector: 0x4552d7ab
-// =============================================================================
-document.getElementById("completeBtn").onclick = async () => {
-  if (!jobId) return;
-  try {
-    const data = "0x4552d7ab" + uint(jobId) + uint(1);
-    await provider.request({ method: "eth_sendTransaction", params: [{ from: currentAccount, to: ARC_ESCROW, data }] });
-    tip("放款成功");
-  } catch (e) { tip("放款失败"); }
+    await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: FxEscrow,
+        data: "0x2e1a7d4d" // withdraw()
+      }]
+    });
+    tip("释放成功");
+  } catch (e) {
+    tip("释放失败");
+  }
 };
 </script>
 </body>
