@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>去中心化托管仲裁 DApp</title>
+  <title>ARC ERC-8183 仲裁托管 DApp</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -13,17 +13,11 @@
     .btn-blue { background: #0071e3; }
     .btn-green { background: #22c55e; }
     .btn-orange { background: #f97316; }
-    .address { background: #2a2a2a; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; display: none; }
+    .info { background: #2a2a2a; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; }
     .tip { color: #ccc; font-size: 12px; margin-top: 4px; }
     input {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border-radius: 8px;
-      border: 1px solid #444;
-      background: #222;
-      color: #fff;
-      margin-bottom: 10px;
+      width: 100%; padding: 12px; font-size: 16px; border-radius: 8px;
+      border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px;
     }
   </style>
 </head>
@@ -31,62 +25,95 @@
 
 <div class="card">
   <h3>🔌 连接钱包</h3>
-  <button class="btn btn-blue" id="connectBtn">连接钱包（OKX / MetaMask）</button>
-  <div class="address" id="account"></div>
+  <button class="btn btn-blue" id="connectBtn">连接钱包</button>
+  <div class="info" id="account" style="display:none"></div>
   <div class="tip" id="tip"></div>
 </div>
 
 <div class="card">
-  <h3>💰 授权并托管 USDC</h3>
-  <input type="number" id="amountInput" placeholder="输入 USDC 金额，例如 10" />
-  <button class="btn btn-blue" id="approveBtn">授权 USDC</button>
-  <button class="btn btn-green" id="depositBtn">托管到合约</button>
+  <h3>📝 创建 ARC 任务 (createJob)</h3>
+  <input placeholder="输入提供者地址" id="providerAddr">
+  <button class="btn btn-blue" id="createJobBtn">创建 Job</button>
+  <div class="info" id="jobIdBox" style="display:none">Job ID: <span id="jobId"></span></div>
+</div>
+
+<div class="card">
+  <h3>💰 设置预算 & 授权 USDC</h3>
+  <input type="number" placeholder="USDC 金额" id="amountInput">
+  <button class="btn btn-blue" id="approveBtn">授权 USDC 给 ARC</button>
+</div>
+
+<div class="card">
+  <h3>📥 资金托管 (fund)</h3>
+  <button class="btn btn-green" id="fundBtn">执行 fund 托管</button>
 </div>
 
 <div class="card">
   <h3>⚖️ 仲裁放款</h3>
-  <button class="btn btn-orange" id="releaseBtn">放款至当前账户</button>
+  <button class="btn btn-orange" id="releaseBtn">放款</button>
 </div>
 
 <script>
 let currentAccount = null;
+let currentJobId = 1; // 实际应从 createJob 返回获取
+
 const provider = window.okxwallet || window.ethereum;
-const USDC = "0x6000000000000000000000000000000000000000";
-const ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD";
+
+// ===== 官方 ARC 合约地址（来自文档）=====
+const USDC = "0x3600000000000000000000000000000000000000";
+const ARC_ESCROW = "0x2dec78ae63ff8CB4Eda8719135cD97BD05ef86cD"; // 你提供的合约
 
 // 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
-  if (!provider) {
-    document.getElementById("tip").innerText = "未检测到钱包插件";
-    return;
-  }
+  if (!provider) return tip("未检测到钱包");
   try {
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     currentAccount = accounts[0];
     const el = document.getElementById("account");
-    el.innerText = "已连接：" + currentAccount;
+    el.innerText = currentAccount;
     el.style.display = "block";
-    document.getElementById("tip").innerText = "连接成功";
-  } catch (e) {
-    document.getElementById("tip").innerText = "连接失败";
-  }
+    tip("连接成功");
+  } catch (e) { tip("连接失败"); }
 };
 
-// 获取输入金额，并转为 6 位小数
-function getAmount() {
-  const input = document.getElementById("amountInput").value.trim();
-  if (!input || isNaN(input) || Number(input) <= 0) {
-    alert("请输入正确金额");
-    return null;
-  }
-  return (BigInt(input) * 10n ** 6n).toString(16).padStart(64, '0');
-}
+// 工具
+function tip(s) { document.getElementById("tip").innerText = s; }
+function toHex64(n) { return BigInt(n).toString(16).padStart(64, '0'); }
+function addrHex(s) { return s.slice(2).padStart(64, '0'); }
 
-// 授权 USDC
+// 1. createJob（简化）
+document.getElementById("createJobBtn").onclick = async () => {
+  if (!currentAccount) return tip("请连接钱包");
+  try {
+    // createJob(address provider, uint256 expiry, bytes calldata spec)
+    // selector: 0x19307a90
+    const providerAddr = document.getElementById("providerAddr").value || currentAccount;
+    const expiry = Math.floor(Date.now()/1000 + 3600*24*7);
+
+    const tx = await provider.request({
+      method: "eth_sendTransaction",
+      params: [{
+        from: currentAccount,
+        to: ARC_ESCROW,
+        data: "0x19307a90"
+          + addrHex(providerAddr)
+          + toHex64(expiry)
+          + "0000000000000000000000000000000000000000000000000000000000000040"
+          + "0000000000000000000000000000000000000000000000000000000000000000"
+      }]
+    });
+    tip("创建 job 成功，jobId = " + currentJobId);
+    document.getElementById("jobIdBox").style.display = "block";
+    document.getElementById("jobId").innerText = currentJobId;
+  } catch (e) { tip("createJob 失败"); }
+};
+
+// 2. 授权 USDC 给 ARC 合约
 document.getElementById("approveBtn").onclick = async () => {
-  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
-  const amountHex = getAmount();
-  if (!amountHex) return;
+  if (!currentAccount) return tip("请连接钱包");
+  const v = document.getElementById("amountInput").value;
+  if (!v || isNaN(v)) return tip("输入金额");
+  const amount = BigInt(v) * 10n ** 6n;
 
   try {
     await provider.request({
@@ -94,51 +121,55 @@ document.getElementById("approveBtn").onclick = async () => {
       params: [{
         from: currentAccount,
         to: USDC,
-        data: "0x095ea7b30000000000000000000000002dec78ae63ff8cb4eda8719135cd97bd05ef86cd" + amountHex
+        data: "0x095ea7b3" + addrHex(ARC_ESCROW) + toHex64(amount)
       }]
     });
-    document.getElementById("tip").innerText = "授权交易已发起";
-  } catch (e) {
-    document.getElementById("tip").innerText = "授权已取消";
-  }
+    tip("USDC 授权成功");
+  } catch (e) { tip("授权取消"); }
 };
 
-// 托管
-document.getElementById("depositBtn").onclick = async () => {
-  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
-  const amountHex = getAmount();
-  if (!amountHex) return;
-
+// 3. fund(uint256 jobId, bytes optParams) —— 正确 ERC-8183
+document.getElementById("fundBtn").onclick = async () => {
+  if (!currentAccount) return tip("请连接钱包");
   try {
+    // selector: fund(uint256,bytes) → 0x3c624d2e
     await provider.request({
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
-        to: ESCROW,
-        data: "0x47e7ef24000000000000000000000000600000000000000000000000000000000" + amountHex
+        to: ARC_ESCROW,
+        data: "0x3c624d2e"
+          + toHex64(currentJobId)
+          + "0000000000000000000000000000000000000000000000000000000000000040"
+          + "0000000000000000000000000000000000000000000000000000000000000000"
       }]
     });
-    document.getElementById("tip").innerText = "托管交易已发起";
+    tip("fund 托管成功！");
   } catch (e) {
-    document.getElementById("tip").innerText = "托管已取消";
+    tip("fund 失败：合约 revert 或参数错误");
   }
 };
 
-// 放款
+// 4. 放款 release/resolve
 document.getElementById("releaseBtn").onclick = async () => {
-  if (!currentAccount) return document.getElementById("tip").innerText = "请先连接钱包";
+  if (!currentAccount) return tip("请连接钱包");
   try {
+    // resolve(uint256 jobId, bool success, bytes calldata result)
     await provider.request({
       method: "eth_sendTransaction",
       params: [{
         from: currentAccount,
-        to: ESCROW,
-        data: "0x2e1a7d4d000000000000000000000000" + currentAccount.slice(2)
+        to: ARC_ESCROW,
+        data: "0x065558d4"
+          + toHex64(currentJobId)
+          + "0000000000000000000000000000000000000000000000000000000000000001"
+          + "0000000000000000000000000000000000000000000000000000000000000060"
+          + "0000000000000000000000000000000000000000000000000000000000000000"
       }]
     });
-    document.getElementById("tip").innerText = "放款交易已发起";
+    tip("放款执行成功");
   } catch (e) {
-    document.getElementById("tip").innerText = "放款已取消";
+    tip("放款失败");
   }
 };
 </script>
