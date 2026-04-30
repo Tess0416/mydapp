@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Arc 官方 USDC 托管交互</title>
+  <title>ARC 测试网 USDC 托管 FxEscrow</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -24,133 +24,130 @@
 <body>
 
 <div class="card">
-  <h3>🔌 连接钱包</h3>
+  <h3>🔌 连接钱包（必须切 ARC 测试网）</h3>
   <button class="btn btn-blue" id="connectBtn">连接钱包</button>
   <div class="info" id="account" style="display:none"></div>
   <div class="tip" id="tip"></div>
 </div>
 
 <div class="card">
-  <h3>💰 授权 USDC → FxEscrow（官方托管）</h3>
+  <h3>💰 授权 USDC 给 FxEscrow</h3>
   <input type="number" placeholder="输入 USDC 金额" id="amountInput">
   <button class="btn btn-blue" id="approveBtn">授权 USDC</button>
 </div>
 
 <div class="card">
-  <h3>📥 托管到官方 FxEscrow</h3>
+  <h3>📥 ARC测试网 执行托管</h3>
   <button class="btn btn-green" id="depositBtn">执行托管</button>
 </div>
 
 <div class="card">
-  <h3>⚖️ 放款/赎回</h3>
-  <button class="btn btn-orange" id="releaseBtn">释放资金</button>
+  <h3>⚖️ 赎回释放资金</h3>
+  <button class="btn btn-orange" id="releaseBtn">赎回资金</button>
 </div>
 
 <script>
 let currentAccount = null;
 const provider = window.okxwallet || window.ethereum;
 
-// ======================
-// 官方 Arc 测试网合约地址（来自你提供的文档）
-// ======================
-const USDC = "0x3600000000000000000000000000000000000000";
-const FxEscrow = "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8";
-const Permit2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+// ========== ARC 测试网 合约地址 ==========
+const USDC_ADDR = "0x3600000000000000000000000000000000000000";
+const ESCROW_ADDR = "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8";
 
 function tip(text) {
   document.getElementById("tip").innerText = text;
 }
 
-function toHex64(value) {
-  return BigInt(value).toString(16).padStart(64, "0");
+// 地址转标准64位hex
+function padAddr(addr) {
+  return addr.toLowerCase().replace("0x","").padStart(64,"0");
 }
-
-function addressToHex(addr) {
-  return addr.slice(2).padStart(64, "0");
+// 数值转64位hex
+function padNum(n) {
+  return BigInt(n).toString(16).padStart(64,"0");
 }
 
 // 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
-  if (!provider) return tip("未检测到钱包");
+  if(!provider) return tip("未检测到钱包插件");
   try {
-    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const accounts = await provider.request({method:"eth_requestAccounts"});
     currentAccount = accounts[0];
-    const accEl = document.getElementById("account");
-    accEl.innerText = currentAccount;
-    accEl.style.display = "block";
-    tip("连接成功");
-  } catch (e) {
-    tip("连接失败");
+    document.getElementById("account").innerText = currentAccount;
+    document.getElementById("account").style.display = "block";
+    tip("钱包连接成功，请确认在 ARC 测试网");
+  } catch(e) {
+    tip("连接钱包失败");
   }
 };
 
-// ------------------------------
-// 1. 授权 USDC 给官方 FxEscrow（完全标准 ERC20 approve）
-// ------------------------------
+// 授权 USDC
 document.getElementById("approveBtn").onclick = async () => {
-  if (!currentAccount) return tip("请先连接钱包");
-  const input = document.getElementById("amountInput").value;
-  if (!input || isNaN(input) || Number(input) <= 0) return tip("输入有效金额");
+  if(!currentAccount) return tip("先连接钱包");
+  const val = document.getElementById("amountInput").value.trim();
+  if(!val || Number(val) <= 0) return tip("输入正确金额");
 
-  const amount = BigInt(input) * 10n ** 6n; // 官方 USDC 6 位小数
+   const amountBig = BigInt(val) * 1000000n;
+  const data = "0x095ea7b3" + padAddr(ESCROW_ADDR) + padNum(amountBig);
 
   try {
     await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
+      method:"eth_sendTransaction",
+      params:[{
         from: currentAccount,
-        to: USDC,
-        data: "0x095ea7b3" + addressToHex(FxEscrow) + toHex64(amount)
+        to: USDC_ADDR,
+        data: data
       }]
     });
-    tip("授权成功");
-  } catch (e) {
-    tip("授权已取消");
+    tip("授权已发起，钱包确认后等待上链");
+  } catch(e) {
+    tip("授权取消或失败");
   }
 };
 
-// ------------------------------
-// 2. 托管 deposit（官方 escrow 标准）
-// ------------------------------
+// ARC 测试网 托管Deposit 修复版
 document.getElementById("depositBtn").onclick = async () => {
-  if (!currentAccount) return tip("请先连接钱包");
-  const input = document.getElementById("amountInput").value;
-  if (!input) return tip("输入金额");
+  if(!currentAccount) return tip("先连接钱包");
+  const val = document.getElementById("amountInput").value.trim();
+  if(!val) return tip("请输入托管金额");
 
-  const amount = BigInt(input) * 10n ** 6n;
+   const amountBig = BigInt(val) * 1000000n;
+  // 适配ARC测试网：deposit 完整参数结构
+  const selector = "0xd945d9f8";
+  // 按ARC合约要求：金额 + 额外占位参数补齐
+  const data = "0x" + selector.slice(2) + padNum(amountBig) + padAddr(currentAccount);
 
   try {
     await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
+      method:"eth_sendTransaction",
+      params:[{
         from: currentAccount,
-        to: FxEscrow,
-        data: "0xd945d9f8" + toHex64(amount) // deposit(uint256)
+        to: ESCROW_ADDR,
+        data: data
       }]
     });
-    tip("托管成功");
-  } catch (e) {
-    tip("托管失败：合约 revert");
+    tip("托管交易已发起，钱包确认");
+  } catch(e) {
+    tip("托管失败：未授权/不在ARC测试网/地址无白名单");
   }
 };
 
-// ------------------------------
-// 3. 释放/赎回（官方 withdraw）
-// ------------------------------
+// 赎回
 document.getElementById("releaseBtn").onclick = async () => {
-  if (!currentAccount) return tip("请先连接钱包");
+  if(!currentAccount) return tip("先连接钱包");
   try {
+    const data = "0x2e1a7d4d";
     await provider.request({
-      method: "eth_sendTransaction",
-      params: [{
+      method:"eth_sendTransaction",
+      params:[{
         from: currentAccount,
-        to: FxEscrow,
-        data: "0x2e1a7d4d" // withdraw()
+        to: ESCROW_ADDR,
+        data: data
       }]
     });
-    tip("释放成功");
-  } catch (e) {
-    tip("释放失败");
+    tip("赎回交易已发起");
+  } catch(e) {
+    tip("赎回失败");
   }
 };
 </script>
