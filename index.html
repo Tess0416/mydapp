@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ARC 测试网 USDC 托管 FxEscrow</title>
+  <title>ARC测试网 FxEscrow 全套完整流程</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
     body { background: #121212; color: #fff; padding: 20px; }
@@ -13,8 +13,9 @@
     .btn-blue { background: #0071e3; }
     .btn-green { background: #22c55e; }
     .btn-orange { background: #f97316; }
+    .btn-purple { background: #9333ea; }
     .info { background: #2a2a2a; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 14px; word-break: break-all; }
-    .tip { color: #ccc; font-size: 12px; margin-top: 4px; }
+    .tip { color: #ccc; font-size: 12px; margin-top: 8px; }
     input {
       width: 100%; padding: 12px; font-size: 16px; border-radius: 8px;
       border: 1px solid #444; background: #222; color: #fff; margin-bottom: 10px;
@@ -24,129 +25,159 @@
 <body>
 
 <div class="card">
-  <h3>🔌 连接钱包（必须切 ARC 测试网）</h3>
+  <h3>🔌 1. 连接钱包（切ARC测试网）</h3>
   <button class="btn btn-blue" id="connectBtn">连接钱包</button>
   <div class="info" id="account" style="display:none"></div>
   <div class="tip" id="tip"></div>
 </div>
 
 <div class="card">
-  <h3>💰 授权 USDC 给 FxEscrow</h3>
-  <input type="number" placeholder="输入 USDC 金额" id="amountInput">
+  <h3>💰 2. 授权 USDC 给托管合约</h3>
+  <input type="number" placeholder="输入USDC金额" id="amountInput">
   <button class="btn btn-blue" id="approveBtn">授权 USDC</button>
 </div>
 
 <div class="card">
-  <h3>📥 ARC测试网 执行托管</h3>
-  <button class="btn btn-green" id="depositBtn">执行托管</button>
+  <h3>📋 3. recordTrade 记录交易</h3>
+  <button class="btn btn-purple" id="recordTradeBtn">执行 recordTrade</button>
 </div>
 
 <div class="card">
-  <h3>⚖️ 赎回释放资金</h3>
-  <button class="btn btn-orange" id="releaseBtn">赎回资金</button>
+  <h3>📤 4. makerDeliver 卖方交割</h3>
+  <button class="btn btn-green" id="makerDeliverBtn">执行 makerDeliver</button>
+</div>
+
+<div class="card">
+  <h3>📥 5. takerDeliver 买方交割</h3>
+  <button class="btn btn-green" id="takerDeliverBtn">执行 takerDeliver</button>
+</div>
+
+<div class="card">
+  <h3>🔓 6. 赎回 withdraw 释放资金</h3>
+  <button class="btn btn-orange" id="withdrawBtn">赎回资金</button>
 </div>
 
 <script>
 let currentAccount = null;
 const provider = window.okxwallet || window.ethereum;
 
-// ========== ARC 测试网 合约地址 ==========
-const USDC_ADDR = "0x3600000000000000000000000000000000000000";
-const ESCROW_ADDR = "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8";
+// ========== ARC测试网 固定合约地址 ==========
+const USDC = "0x3600000000000000000000000000000000000000";
+const FxEscrow = "0x867650F5eAe8df91445971f14d89fd84F0C9a9f8";
+
+// 函数选择器 跟你链上交易完全对应
+const SEL = {
+  approve:        "0x095ea7b3",
+  recordTrade:    "0x88a96d34",
+  makerDeliver:   "0x5fbf7556",
+  takerDeliver:   "0x30b48525",
+  withdraw:       "0x2e1a7d4d"
+};
 
 function tip(text) {
   document.getElementById("tip").innerText = text;
 }
 
-// 地址转标准64位hex
-function padAddr(addr) {
-  return addr.toLowerCase().replace("0x","").padStart(64,"0");
+// 工具：地址转64位hex
+function addrHex(addr){
+  return addr.toLowerCase().replace('0x','').padStart(64,'0');
 }
-// 数值转64位hex
-function padNum(n) {
-  return BigInt(n).toString(16).padStart(64,"0");
+// 工具：数值转64位hex
+function numHex(val){
+  return BigInt(val).toString(16).padStart(64,'0');
 }
 
-// 连接钱包
+// 1. 连接钱包
 document.getElementById("connectBtn").onclick = async () => {
-  if(!provider) return tip("未检测到钱包插件");
+  if(!provider) return tip("未检测到钱包");
   try {
     const accounts = await provider.request({method:"eth_requestAccounts"});
     currentAccount = accounts[0];
     document.getElementById("account").innerText = currentAccount;
     document.getElementById("account").style.display = "block";
-    tip("钱包连接成功，请确认在 ARC 测试网");
-  } catch(e) {
-    tip("连接钱包失败");
+    tip("钱包连接成功，请确认在ARC测试网");
+  }catch(e){
+    tip("连接失败");
   }
 };
 
-// 授权 USDC
+// 2. 授权 USDC
 document.getElementById("approveBtn").onclick = async () => {
   if(!currentAccount) return tip("先连接钱包");
-  const val = document.getElementById("amountInput").value.trim();
-  if(!val || Number(val) <= 0) return tip("输入正确金额");
+  let val = document.getElementById("amountInput").value.trim();
+  if(!val || Number(val)<=0) return tip("输入有效金额");
 
-   const amountBig = BigInt(val) * 1000000n;
-  const data = "0x095ea7b3" + padAddr(ESCROW_ADDR) + padNum(amountBig);
+  let amount = BigInt(val) * 10n**6n;
+  let data = SEL.approve + addrHex(FxEscrow) + numHex(amount);
 
   try {
     await provider.request({
       method:"eth_sendTransaction",
-      params:[{
-        from: currentAccount,
-        to: USDC_ADDR,
-        data: data
-      }]
+      params:[{from:currentAccount,to:USDC,data:data}]
     });
-    tip("授权已发起，钱包确认后等待上链");
-  } catch(e) {
-    tip("授权取消或失败");
+    tip("授权已发起，钱包确认");
+  }catch(e){
+    tip("授权取消/失败");
   }
 };
 
-// ARC 测试网 托管Deposit 修复版
-document.getElementById("depositBtn").onclick = async () => {
+// 3. recordTrade 记录交易
+document.getElementById("recordTradeBtn").onclick = async () => {
   if(!currentAccount) return tip("先连接钱包");
-  const val = document.getElementById("amountInput").value.trim();
-  if(!val) return tip("请输入托管金额");
-
-   const amountBig = BigInt(val) * 1000000n;
-  // 适配ARC测试网：deposit 完整参数结构
-  const selector = "0xd945d9f8";
-  // 按ARC合约要求：金额 + 额外占位参数补齐
-  const data = "0x" + selector.slice(2) + padNum(amountBig) + padAddr(currentAccount);
-
   try {
+    // 适配ARC测试网无参标准调用
+    let data = SEL.recordTrade;
     await provider.request({
       method:"eth_sendTransaction",
-      params:[{
-        from: currentAccount,
-        to: ESCROW_ADDR,
-        data: data
-      }]
+      params:[{from:currentAccount,to:FxEscrow,data:data}]
     });
-    tip("托管交易已发起，钱包确认");
-  } catch(e) {
-    tip("托管失败：未授权/不在ARC测试网/地址无白名单");
+    tip("recordTrade 交易已发起");
+  }catch(e){
+    tip("recordTrade 执行失败");
   }
 };
 
-// 赎回
-document.getElementById("releaseBtn").onclick = async () => {
+// 4. makerDeliver 卖方交割
+document.getElementById("makerDeliverBtn").onclick = async () => {
   if(!currentAccount) return tip("先连接钱包");
   try {
-    const data = "0x2e1a7d4d";
+    let data = SEL.makerDeliver;
     await provider.request({
       method:"eth_sendTransaction",
-      params:[{
-        from: currentAccount,
-        to: ESCROW_ADDR,
-        data: data
-      }]
+      params:[{from:currentAccount,to:FxEscrow,data:data}]
     });
-    tip("赎回交易已发起");
-  } catch(e) {
+    tip("makerDeliver 交割已发起");
+  }catch(e){
+    tip("makerDeliver 失败");
+  }
+};
+
+// 5. takerDeliver 买方交割
+document.getElementById("takerDeliverBtn").onclick = async () => {
+  if(!currentAccount) return tip("先连接钱包");
+  try {
+    let data = SEL.takerDeliver;
+    await provider.request({
+      method:"eth_sendTransaction",
+      params:[{from:currentAccount,to:FxEscrow,data:data}]
+    });
+    tip("takerDeliver 交割已发起");
+  }catch(e){
+    tip("takerDeliver 失败");
+  }
+};
+
+// 6. 赎回 withdraw
+document.getElementById("withdrawBtn").onclick = async () => {
+  if(!currentAccount) return tip("先连接钱包");
+  try {
+    let data = SEL.withdraw;
+    await provider.request({
+      method:"eth_sendTransaction",
+      params:[{from:currentAccount,to:FxEscrow,data:data}]
+    });
+    tip("赎回已发起");
+  }catch(e){
     tip("赎回失败");
   }
 };
